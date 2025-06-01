@@ -1,11 +1,13 @@
 import * as core from '@actions/core';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { logger, handleError, withRetry, formatDate } from './utils.js';
+import { logger, handleError, withRetry, formatDate, IssueManager, ConcurrencyPool } from './utils.js';
+import * as github from '@actions/github';
 
-const RETRY_TIMES = parseInt(core.getInput('retry_times') || 3);
-const POSTS_COUNT = parseInt(core.getInput('posts_count') || 2);
-const DATE_FORMAT = core.getInput('date_format') || 'YYYY-MM-DD HH:mm';
+const RETRY_TIMES = core.getInput('retry_times') || 3;
+const POSTS_COUNT = core.getInput('posts_count') || 2;
+const DATE_FORMAT = core.getInput('date_format') || 'YYYY-MM-DD HH:mm:ss';
+const CONCURRENCY_LIMIT = 10;
 
 async function parseFeed(feedUrl) {
   try {
@@ -21,7 +23,7 @@ async function parseFeed(feedUrl) {
             link = $(el).find('link').attr('href');
           }
       const published = $(el).find('published').text();
-      const formattedPublished = published ? formatDate(published, DATE_FORMAT) : '';
+      const formattedPublished = published ? formatDate(published, DATE_FORMAT) : ''; // Added DATE_FORMAT
       logger('info', `Extracted - Title: ${title}, Link: ${link}, Published: ${formattedPublished}`);
       if (title && link) {
         posts.push({ title, link, published: formattedPublished });
@@ -51,7 +53,7 @@ async function processIssue(issue) {
       return null;
     }
 
-    logger('info', `Found JSON content in issue #${issue.number}`);
+    logger('info', `Found JSON content in issue #${issue.number}, jsonMatch[0]: ${jsonMatch[0]}`);
     const jsonData = JSON.parse(jsonMatch[0]);
     logger('info', `Got JSON content in issue #${issue.number}`, jsonData);
     
@@ -59,7 +61,7 @@ async function processIssue(issue) {
     const feedUrl = jsonData.feed;
     if (feedUrl) {
       logger('info', `Getting feed data from ${feedUrl}`);
-      const posts = await withRetry(parseFeed, RETRY_TIMES, feedUrl);
+      const posts = await withRetry(() => parseFeed(feedUrl), RETRY_TIMES);
       jsonData.posts = posts;
     }
 
@@ -76,51 +78,34 @@ async function run() {
   const token =  process.env.GITHUB_TOKEN;
   const owner = github.context.repo.owner;
   const repo = github.context.repo.repo;
-  const { Octokit } = await import('@octokit/rest');
-  const octokit = new Octokit({
-    auth: token
-  });
+  const issueManager = new IssueManager(token);
 
   try {
-    const allIssues = [];
-    let page = 1;
-    let hasMore = true;
+    logger('info', `>> 开始`);
+    const allIssues = await issueManager.getIssues();
 
-    while (hasMore) {
-      const { data: issues } = await octokit.issues.listForRepo({
-        owner,
-        repo,
-        state: 'open',
-        per_page: 100,
-        page
-      });
-
-      if (issues.length === 0) {
-        hasMore = false;
-      } else {
-        allIssues.push(...issues);
-        page++;
-      }
-    }
-
-    logger('info', `Found ${allIssues.length} open issues.`);
+    const pool = new ConcurrencyPool(CONCURRENCY_LIMIT);
 
     for (const issue of allIssues) {
-      const result = await processIssue(issue);
-      if (result) {
-        // 更新 issue body
-        await octokit.issues.update({
-          owner,
-          repo,
-          issue_number: issue.number,
-          body: result.newBody
-        });
-        logger('info', `Updated issue #${issue.number}`);
-      }
+      await pool.add(async () => {
+        const result = await processIssue(issue);
+        if (result) {
+          // 更新 issue body
+          await issueManager.octokit.issues.update({
+            owner,
+            repo,
+            issue_number: issue.number,
+            body: result.newBody
+          });
+          logger('info', `Updated issue #${issue.number}`);
+        }
+      });
     }
 
+    logger('info', `>> 结束`);
   } catch (error) {
-    handleError(error, 'Error processing issues');
+    // handleError(error, 'Error processing issues');
+    logger('error', `Error processing issues`);
     process.exit(1);
   }
 }
