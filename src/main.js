@@ -46,7 +46,7 @@ async function processIssue(issue) {
     }
 
     const match = issue.body.match(/```json\s*\{[\s\S]*?\}\s*```/m);
-    const jsonMatch = match ? match[0].match(/\{[\s\S]*?\}/m) : null;
+    const jsonMatch = match ? match[0].match(/\{[\s\S]*\}/m) : null;
 
     if (!jsonMatch) {
       logger('warn', `No JSON content found in issue #${issue.number}`);
