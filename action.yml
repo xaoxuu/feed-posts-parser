@@ -6,7 +6,8 @@ inputs:
   retry_times:
     description: '重试次数'
     required: false
-    default: '3'
+    default: 3
+    type: integer
   data_path:
     description: '输入文件路径'
     required: false
@@ -14,7 +15,8 @@ inputs:
   posts_count:
     description: '每个feed地址获取的文章数'
     required: false
-    default: '2'
+    default: 2
+    type: integer
   date_format:
     description: '日期格式'
     required: false

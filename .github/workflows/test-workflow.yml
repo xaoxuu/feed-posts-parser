@@ -1,0 +1,19 @@
+name: Test Feed Post Parser
+
+on:
+  workflow_dispatch: # Allows manual triggering
+  # schedule:
+  #   - cron: '0 5 * * *' # Runs daily at 5 AM UTC
+
+jobs:
+  run-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run Feed Post Parser Action
+        uses: ./ # Refers to the action in the current repository
+        with:
+          data_path: 'v2/data.json'
+          posts_count: '2'
+          date_format: 'YYYY-MM-DD HH:mm'

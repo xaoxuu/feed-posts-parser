@@ -6,8 +6,8 @@ import path from 'path';
 import { logger, handleError, withRetry, ConcurrencyPool, writeJsonToFile, formatDate } from './utils.js';
 
 const DATA_FILE_PATH = path.join(process.cwd(), core.getInput('data_path') || '/v2/data.json');
-const RETRY_TIMES = parseInt(core.getInput('retry_times') || '3');
-const POSTS_COUNT = parseInt(core.getInput('posts_count') || '2');
+const RETRY_TIMES = parseInt(core.getInput('retry_times') || 3);
+const POSTS_COUNT = parseInt(core.getInput('posts_count') || 2);
 const DATE_FORMAT = core.getInput('date_format') || 'YYYY-MM-DD HH:mm';
 
 async function parseFeed(feedUrl) {
