@@ -1,11 +1,8 @@
 import * as core from '@actions/core';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
-import { logger, handleError, withRetry, ConcurrencyPool, writeJsonToFile, formatDate } from './utils.js';
+import { logger, handleError, withRetry, formatDate } from './utils.js';
 
-const DATA_FILE_PATH = path.join(process.cwd(), core.getInput('data_path') || '/v2/data.json');
 const RETRY_TIMES = parseInt(core.getInput('retry_times') || 3);
 const POSTS_COUNT = parseInt(core.getInput('posts_count') || 2);
 const DATE_FORMAT = core.getInput('date_format') || 'YYYY-MM-DD HH:mm';
@@ -38,30 +35,93 @@ async function parseFeed(feedUrl) {
   }
 }
 
-async function run() {
+async function processIssue(issue) {
   try {
-    logger('info', 'Starting feed post parser...');
+    logger('info', `Processing issue #${issue.number}`);
+    if (!issue.body) {
+      logger('warn', `Issue #${issue.number} has no body content, skipping...`);
+      return null;
+    }
 
-    const data = JSON.parse(fs.readFileSync(DATA_FILE_PATH, 'utf8'));
-    const concurrencyPool = new ConcurrencyPool(5); // Limit to 5 concurrent requests
+    const match = issue.body.match(/```json\s*\{[\s\S]*?\}\s*```/m);
+    const jsonMatch = match ? match[0].match(/\{[\s\S]*?\}/m) : null;
 
-    const updatedContent = await Promise.all(data.content.map(async (item) => {
-      if (item.feed) {
-        logger('info', `Processing feed for ${item.title || item.url}: ${item.feed}`);
-        const posts = await concurrencyPool.add(() => withRetry(() => parseFeed(item.feed), RETRY_TIMES));
-        return { ...item, posts };
+    if (!jsonMatch) {
+      logger('warn', `No JSON content found in issue #${issue.number}`);
+      return null;
+    }
+
+    logger('info', `Found JSON content in issue #${issue.number}`);
+    const jsonData = JSON.parse(jsonMatch[0]);
+    logger('info', `Got JSON content in issue #${issue.number}`, jsonData);
+    
+    // 获取 feed 数据
+    const feedUrl = jsonData.feed;
+    if (feedUrl) {
+      logger('info', `Getting feed data from ${feedUrl}`);
+      const posts = await withRetry(parseFeed, RETRY_TIMES, feedUrl);
+      jsonData.posts = posts;
+    }
+
+    logger('info', `Converted JSON content in issue #${issue.number}`, jsonData);
+    const newBody = issue.body.replace(jsonMatch[0], JSON.stringify(jsonData, null, 2));
+    return { data: jsonData, newBody: newBody };
+  } catch (error) {
+    handleError(error, `Error processing issue #${issue.number}`);
+    return null;
+  }
+}
+
+async function run() {
+  const token =  process.env.GITHUB_TOKEN;
+  const owner = github.context.repo.owner;
+  const repo = github.context.repo.repo;
+  const { Octokit } = await import('@octokit/rest');
+  const octokit = new Octokit({
+    auth: token
+  });
+
+  try {
+    const allIssues = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data: issues } = await octokit.issues.listForRepo({
+        owner,
+        repo,
+        state: 'open',
+        per_page: 100,
+        page
+      });
+
+      if (issues.length === 0) {
+        hasMore = false;
+      } else {
+        allIssues.push(...issues);
+        page++;
       }
-      return item;
-    }));
+    }
 
-    data.content = updatedContent;
-    writeJsonToFile(DATA_FILE_PATH, data);
+    logger('info', `Found ${allIssues.length} open issues.`);
 
-    logger('info', 'Feed post parsing completed.');
+    for (const issue of allIssues) {
+      const result = await processIssue(issue);
+      if (result) {
+        // 更新 issue body
+        await octokit.issues.update({
+          owner,
+          repo,
+          issue_number: issue.number,
+          body: result.newBody
+        });
+        logger('info', `Updated issue #${issue.number}`);
+      }
+    }
 
   } catch (error) {
-    handleError(error, 'Main process failed');
-    core.setFailed(error.message);
+    handleError(error, 'Error processing issues');
+    process.exit(1);
   }
 }
 

@@ -34,20 +34,6 @@ export async function withRetry(fn, retries = 3, delay = 1000) {
   }
 }
 
-export function writeJsonToFile(filePath, data) {
-  try {
-    const dirPath = path.dirname(filePath);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    return true;
-  } catch (error) {
-    handleError(error, `Error writing to file ${filePath}`);
-    return false;
-  }
-}
-
 export class ConcurrencyPool {
   constructor(maxConcurrency) {
     this.maxConcurrency = maxConcurrency;
