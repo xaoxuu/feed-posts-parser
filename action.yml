@@ -1,0 +1,25 @@
+name: 'Feed Posts Parser'
+description: 'Feed Posts Parser'
+author: 'xaoxuu'
+
+inputs:
+  retry_times:
+    description: '重试次数'
+    required: false
+    default: '3'
+  data_path:
+    description: '输入文件路径'
+    required: false
+    default: '/v2/data.json'
+  posts_count:
+    description: '每个feed地址获取的文章数'
+    required: false
+    default: '2'
+  date_format:
+    description: '日期格式'
+    required: false
+    default: 'YYYY-MM-DD HH:mm'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
