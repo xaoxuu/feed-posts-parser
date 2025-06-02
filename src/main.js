@@ -12,19 +12,43 @@ const CONCURRENCY_LIMIT = 10;
 async function parseFeed(feedUrl) {
   try {
     const response = await axios.get(feedUrl, { timeout: 5000 });
-
     const $ = cheerio.load(response.data, { xmlMode: true });
     const posts = [];
 
-    $('feed > entry').slice(0, POSTS_COUNT).each((i, el) => {
-      const title = $(el).find('title').text();
-          let link = $(el).find('link[rel="alternate"]').attr('href');
-          if (!link) {
-            link = $(el).find('link').attr('href');
-          }
-      const published = $(el).find('published').text();
-      const formattedPublished = published ? formatDate(published, DATE_FORMAT) : ''; // Added DATE_FORMAT
+    let isRss = false;
+    let items = $('feed > entry');
+    if (items.length === 0) {
+      items = $('rss > channel > item');
+      if (items.length > 0) {
+        isRss = true;
+      }
+    }
+    logger('info', `Feed URL: ${items.length} isRss: ${isRss}`);
+
+    items.slice(0, POSTS_COUNT).each((i, el) => {
+      const $item = $(el);
+      const title = $item.find('title').first().text();
+
+      let link;
+      if (isRss) {
+        link = $item.find('link').first().text();
+      } else { // Atom
+        link = $item.find('link[rel="alternate"]').attr('href');
+        if (!link) {
+          link = $item.find('link').attr('href');
+        }
+      }
+
+      let publishedDateStr;
+      if (isRss) {
+        publishedDateStr = $item.find('pubDate').first().text();
+      } else { // Atom
+        publishedDateStr = $item.find('published').first().text();
+      }
+
+      const formattedPublished = publishedDateStr ? formatDate(publishedDateStr, DATE_FORMAT) : '';
       logger('info', `Extracted - Title: ${title}, Link: ${link}, Published: ${formattedPublished}`);
+
       if (title && link) {
         posts.push({ title, link, published: formattedPublished });
       }
