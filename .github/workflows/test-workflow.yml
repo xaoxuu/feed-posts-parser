@@ -18,7 +18,6 @@ jobs:
       - name: Run Feed Post Parser Action
         uses: xaoxuu/feed-posts-parser@main
         with:
-          data_path: 'v2/data.json'
           posts_count: '2'
           date_format: 'YYYY-MM-DD HH:mm'
       # 更新完毕后提交一下
