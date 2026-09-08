@@ -48,9 +48,12 @@ async function parseFeed(feedUrl) {
 
       let publishedDateStr;
       if (isRss) {
-        publishedDateStr = $item.find('pubDate').first().text();
+        publishedDateStr = $item.find('pubDate').first().text().trim();
       } else { // Atom
-        publishedDateStr = $item.find('published').first().text();
+        publishedDateStr = $item.find('published').first().text().trim();
+      }
+      if (!publishedDateStr) {
+        publishedDateStr = $item.find('updated').first().text().trim();
       }
 
       const formattedPublished = publishedDateStr ? formatDate(publishedDateStr, DATE_FORMAT, TIMEZONE) : '';
